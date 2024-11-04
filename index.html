@@ -1,0 +1,1191 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>俄罗斯方块消除</title>
+    <style>
+      #gameCanvas {
+        border: 2px solid #333;
+      }
+      .game-container {
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+        margin-top: 20px;
+        gap: 20px;
+      }
+      .score {
+        font-size: 24px;
+        margin-bottom: 10px;
+      }
+      .next-piece {
+        border: 2px solid #333;
+        width: 120px;
+        height: 120px;
+      }
+      .game-info {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 15px;
+      }
+      .control-button {
+        padding: 10px 20px;
+        font-size: 16px;
+        background-color: #4caf50;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+      }
+      .control-button:hover {
+        background-color: #45a049;
+      }
+      .start-screen {
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(135deg, #1a1a1a 0%, #4a4a4a 100%);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        z-index: 1000;
+      }
+
+      .game-title {
+        font-size: 48px;
+        color: #fff;
+        text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+        margin-bottom: 30px;
+        font-family: Arial, sans-serif;
+      }
+
+      .start-button {
+        padding: 15px 40px;
+        font-size: 24px;
+        background: #4caf50;
+        color: white;
+        border: none;
+        border-radius: 25px;
+        cursor: pointer;
+        transition: transform 0.2s, background 0.2s;
+      }
+
+      .start-button:hover {
+        transform: scale(1.1);
+        background: #45a049;
+      }
+
+      .game-over-modal {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background-color: white;
+        padding: 20px;
+        border-radius: 10px;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        display: none;
+        z-index: 2000;
+        text-align: center;
+      }
+
+      .modal-button {
+        margin-top: 10px;
+        padding: 10px 20px;
+        font-size: 16px;
+        background-color: #4caf50;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+      }
+
+      .modal-button:hover {
+        background-color: #45a049;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="start-screen" id="startScreen">
+      <h1 class="game-title">俄罗斯方块消除</h1>
+      <button class="start-button" id="startButton">开始游戏</button>
+    </div>
+
+    <div class="game-container">
+      <div>
+        <div class="score">
+          分数:
+          <span id="score">0</span>
+        </div>
+        <canvas id="gameCanvas" width="300" height="600"></canvas>
+      </div>
+      <div class="game-info">
+        <h3>下一个方块</h3>
+        <canvas id="nextCanvas" width="120" height="120"></canvas>
+        <button id="changeNextPiece" class="control-button">
+          更换下一个方块
+        </button>
+      </div>
+    </div>
+
+    <div class="game-over-modal" id="gameOverModal">
+      <h2>游戏结束</h2>
+      <p>你的分数是: <span id="finalScore">0</span></p>
+      <button class="modal-button" id="restartButton">重新开始</button>
+      <button class="modal-button" id="exitButton">退出游戏</button>
+    </div>
+    <script>
+      // 定义游戏常量
+      const BLOCK_SIZE = 30;
+      const COLS = 10;
+      const ROWS = 20;
+
+      // 定义所有可能的方块形状
+      const SHAPES = [
+        [[1, 1, 1, 1]], // I
+        [
+          [1, 0, 0],
+          [1, 1, 1],
+        ], // J
+        [
+          [0, 0, 1],
+          [1, 1, 1],
+        ], // L
+        [
+          [1, 1],
+          [1, 1],
+        ], // O
+        [
+          [0, 1, 1],
+          [1, 1, 0],
+        ], // S
+        [
+          [0, 1, 0],
+          [1, 1, 1],
+        ], // T
+        [
+          [1, 1, 0],
+          [0, 1, 1],
+        ], // Z
+      ];
+
+      // 将游戏初始化和主循环逻辑包装在一个函数中
+      function initGame() {
+        // 游戏状态变量
+        let board,
+          currentPiece,
+          currentX,
+          currentY,
+          nextPiece,
+          currentColor,
+          nextColor,
+          score,
+          particles,
+          gameInterval;
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+        const scoreElement = document.getElementById("score");
+        // 添加粒子数组和动画状态
+        let isAnimating = false;
+        // 添加新的变量
+        const nextCanvas = document.getElementById("nextCanvas");
+        const nextCtx = nextCanvas.getContext("2d");
+
+        // 添加颜色数组，对应SHAPES数组中的方块顺序
+        const COLORS = [
+          "#00f0f0", // I 方块 - 青色
+          "#a000f0", // T 方块 - 紫色
+          "#f0a000", // L 方块 - 橙色
+          "#0000f0", // J 方块 - 蓝色
+          "#f0f000", // O 方块 - 黄色
+          "#f00000", // Z 方块 - 红色
+          "#00f000", // S 方块 - 绿色
+        ];
+
+        // 添加炸弹标记常量
+        const BOMB_CHANCE = 0.1; // 10%概率成为炸弹
+        const BOMB_MARKER = "B"; // 用于标记炸弹
+
+        // 添加粒子类
+        class Particle {
+          constructor(x, y, color) {
+            this.x = x;
+            this.y = y;
+            this.color = color;
+            this.size = Math.random() * 3 + 2;
+            this.speedX = Math.random() * 6 - 3;
+            this.speedY = Math.random() * 6 - 3;
+            this.alpha = 1;
+          }
+
+          update() {
+            this.x += this.speedX;
+            this.y += this.speedY;
+            this.alpha -= 0.02;
+            this.size -= 0.1;
+          }
+
+          draw() {
+            ctx.save();
+            ctx.globalAlpha = this.alpha;
+            ctx.fillStyle = this.color;
+            ctx.fillRect(this.x, this.y, this.size, this.size);
+            ctx.restore();
+          }
+        }
+
+        function resetGame() {
+          board = Array(ROWS)
+            .fill()
+            .map(() => Array(COLS).fill(0));
+          score = 0;
+          scoreElement.textContent = score;
+          currentPiece = null;
+          nextPiece = null;
+          particles = [];
+        }
+
+        function startGame() {
+          resetGame();
+          newPiece();
+          gameInterval = setInterval(gameLoop, 500);
+          document.getElementById("changeNextPiece").disabled = false;
+          setupControls();
+        }
+
+        function gameLoop() {
+          if (!moveDown()) {
+            merge();
+            newPiece();
+            if (!isValid(currentPiece, currentX, currentY)) {
+              clearInterval(gameInterval);
+              showGameOverModal();
+              return;
+            }
+          }
+          draw();
+        }
+
+        function setupControls() {
+          document.addEventListener("keydown", handleKeyPress);
+        }
+        // 显示游戏结束弹框
+        function showGameOverModal() {
+          const gameOverModal = document.getElementById('gameOverModal');
+          const finalScore = document.getElementById('finalScore');
+          finalScore.textContent = score;
+          gameOverModal.style.display = 'block';
+        }
+
+        function handleKeyPress(e) {
+          switch (e.keyCode) {
+            case 37: // 左
+              if (isValid(currentPiece, currentX - 1, currentY)) currentX--;
+              break;
+            case 39: // 右
+              if (isValid(currentPiece, currentX + 1, currentY)) currentX++;
+              break;
+            case 40: // 下
+              if (isValid(currentPiece, currentX, currentY + 1)) currentY++;
+              break;
+            case 38: // 上 (旋转)
+              rotate();
+              break;
+          }
+          draw();
+        }
+
+        // 定义生成新方块的函数
+        function newPiece() {
+          if (nextPiece) {
+            currentPiece = nextPiece;
+            currentColor = nextColor;
+          } else {
+            const randomIndex = Math.floor(Math.random() * SHAPES.length);
+            currentPiece = SHAPES[randomIndex];
+            currentColor = randomIndex;
+          }
+
+          const randomIndex = Math.floor(Math.random() * SHAPES.length);
+          nextPiece = SHAPES[randomIndex];
+          nextColor = randomIndex;
+
+          currentX =
+            Math.floor(COLS / 2) - Math.floor(currentPiece[0].length / 2);
+          currentY = 0;
+          drawNextPiece();
+        }
+
+        // 添加绘制下一个方块的函数
+        function drawNextPiece() {
+          nextCtx.clearRect(0, 0, nextCanvas.width, nextCanvas.height);
+          if (nextPiece) {
+            const blockSize = 30;
+            const offsetX =
+              (nextCanvas.width - nextPiece[0].length * blockSize) / 2;
+            const offsetY =
+              (nextCanvas.height - nextPiece.length * blockSize) / 2;
+
+            for (let r = 0; r < nextPiece.length; r++) {
+              for (let c = 0; c < nextPiece[r].length; c++) {
+                if (nextPiece[r][c]) {
+                  nextCtx.fillStyle = COLORS[nextColor];
+                  nextCtx.fillRect(
+                    offsetX + c * blockSize,
+                    offsetY + r * blockSize,
+                    blockSize - 1,
+                    blockSize - 1
+                  );
+
+                  // 绘制特殊方块标记
+                  const centerX = offsetX + c * blockSize + blockSize / 2;
+                  const centerY = offsetY + r * blockSize + blockSize / 2;
+
+                  if (nextPiece[r][c] === BOMB_MARKER) {
+                    drawBombMark(nextCtx, centerX, centerY, blockSize);
+                  } else if (nextPiece[r][c] === ROW_CLEAR_MARKER) {
+                    drawRowClearMark(nextCtx, centerX, centerY, blockSize);
+                  } else if (nextPiece[r][c] === COL_CLEAR_MARKER) {
+                    drawColClearMark(nextCtx, centerX, centerY, blockSize);
+                  }
+                }
+              }
+            }
+          }
+        }
+        // 定义方块旋转的函数
+        function rotate() {
+          const rotatedPiece = currentPiece[0].map((_, index) =>
+            currentPiece.map((row) => row[index]).reverse()
+          );
+
+          if (isValid(rotatedPiece, currentX, currentY)) {
+            currentPiece = rotatedPiece;
+          }
+        }
+
+        // 定义方块向下移动的函数
+        function moveDown() {
+          if (isValid(currentPiece, currentX, currentY + 1)) {
+            currentY++;
+            return true;
+          }
+          return false;
+        }
+
+        // 检查碰撞
+        function isValid(piece, x, y) {
+          if (!piece) return false;
+
+          for (let r = 0; r < piece.length; r++) {
+            for (let c = 0; c < piece[r].length; c++) {
+              if (piece[r][c]) {
+                if (
+                  y + r >= ROWS ||
+                  x + c < 0 ||
+                  x + c >= COLS ||
+                  board[y + r][x + c]
+                ) {
+                  return false;
+                }
+              }
+            }
+          }
+          return true;
+        }
+
+        // 固定块到底板
+        function merge() {
+          let specialClearNeeded = false;
+          let rowsToClear = new Set();
+          let colsToClear = new Set();
+
+          for (let r = 0; r < currentPiece.length; r++) {
+            for (let c = 0; c < currentPiece[r].length; c++) {
+              if (currentPiece[r][c]) {
+                const row = currentY + r;
+                const col = currentX + c;
+
+                if (currentPiece[r][c] === ROW_CLEAR_MARKER) {
+                  rowsToClear.add(row);
+                  specialClearNeeded = true;
+                  board[row][col] = currentColor + 1;
+                } else if (currentPiece[r][c] === COL_CLEAR_MARKER) {
+                  colsToClear.add(col);
+                  specialClearNeeded = true;
+                  board[row][col] = currentColor + 1;
+                } else if (currentPiece[r][c] === BOMB_MARKER) {
+                  board[row][col] = "B" + (currentColor + 1);
+                  setTimeout(() => explodeBomb(row, col), 100);
+                  specialClearNeeded = true;
+                } else {
+                  board[row][col] = currentColor + 1;
+                }
+              }
+            }
+          }
+
+          if (specialClearNeeded) {
+            setTimeout(() => {
+              rowsToClear.forEach((row) => clearRow(row));
+              colsToClear.forEach((col) => clearColumn(col));
+              draw();
+              setTimeout(applyGravity, 300);
+            }, 100);
+          }
+
+          draw();
+          clearLines();
+        }
+
+        // 修改清除行的函数
+        function clearLines() {
+          let linesCleared = 0;
+          let linesToClear = []; // 存储需要清除的行索引
+
+          // 首先找出所有需要清除的行
+          for (let r = ROWS - 1; r >= 0; r--) {
+            if (board[r].every((cell) => cell !== 0)) {
+              linesToClear.push(r);
+              createExplosion(r);
+              linesCleared++;
+            }
+          }
+
+          // 如果有行需要清除
+          if (linesCleared > 0) {
+            setTimeout(() => {
+              // 创建新的游戏板，复制不需要清除的行
+              let newBoard = Array(ROWS)
+                .fill()
+                .map(() => Array(COLS).fill(0));
+              let currentRow = ROWS - 1;
+
+              // 从底部开始，跳过需要清除的行
+              for (let r = ROWS - 1; r >= 0; r--) {
+                if (!linesToClear.includes(r)) {
+                  newBoard[currentRow] = [...board[r]];
+                  currentRow--;
+                }
+              }
+
+              // 更新游戏板
+              board = newBoard;
+
+              // 计算分数
+              let bonus = 0;
+              switch (linesCleared) {
+                case 1:
+                  bonus = 100;
+                  break;
+                case 2:
+                  bonus = 300;
+                  break;
+                case 3:
+                  bonus = 500;
+                  break;
+                case 4:
+                  bonus = 800;
+                  break;
+              }
+              score += bonus;
+              scoreElement.textContent = score;
+
+              // 在清除行后立即重新渲染
+              draw();
+
+              // 在消除行后检查悬空方块
+              setTimeout(applyGravity, 100);
+
+              // 在消除行和重力效果后检查连接块
+              setTimeout(() => {
+                checkAndClearConnectedBlocks();
+              }, 300);
+            }, 200);
+
+            isAnimating = true;
+            animateParticles();
+          }
+        }
+
+        // 添加创建爆炸效果的函数
+        function createExplosion(row) {
+          for (let c = 0; c < COLS; c++) {
+            const color = COLORS[board[row][c] - 1];
+            const x = c * BLOCK_SIZE;
+            const y = row * BLOCK_SIZE;
+
+            // 为每个方块创建多个粒子
+            for (let i = 0; i < 10; i++) {
+              particles.push(
+                new Particle(x + BLOCK_SIZE / 2, y + BLOCK_SIZE / 2, color)
+              );
+            }
+          }
+        }
+
+        // 添加粒子动画函数
+        function animateParticles() {
+          if (particles.length === 0) {
+            isAnimating = false;
+            draw(); // 确保最后一帧也正确渲染
+            return;
+          }
+
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+          // 绘制游戏板
+          draw();
+
+          // 更新和绘制粒子
+          particles = particles.filter((particle) => particle.alpha > 0);
+          particles.forEach((particle) => {
+            particle.update();
+            particle.draw();
+          });
+
+          if (isAnimating) {
+            requestAnimationFrame(animateParticles);
+          }
+        }
+
+        // 绘制游戏面
+        function draw() {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+          // 绘制底板
+          for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c < COLS; c++) {
+              if (board[r][c]) {
+                const isBomb = String(board[r][c]).startsWith("B");
+                const colorIndex = isBomb
+                  ? parseInt(String(board[r][c]).substring(1)) - 1
+                  : board[r][c] - 1;
+
+                ctx.fillStyle = COLORS[colorIndex];
+                ctx.fillRect(
+                  c * BLOCK_SIZE,
+                  r * BLOCK_SIZE,
+                  BLOCK_SIZE - 1,
+                  BLOCK_SIZE - 1
+                );
+
+                // 绘制特殊方块标记
+                const centerX = c * BLOCK_SIZE + BLOCK_SIZE / 2;
+                const centerY = r * BLOCK_SIZE + BLOCK_SIZE / 2;
+
+                if (isBomb) {
+                  drawBombMark(ctx, centerX, centerY, BLOCK_SIZE);
+                } else if (board[r][c] === ROW_CLEAR_MARKER) {
+                  drawRowClearMark(ctx, centerX, centerY, BLOCK_SIZE);
+                } else if (board[r][c] === COL_CLEAR_MARKER) {
+                  drawColClearMark(ctx, centerX, centerY, BLOCK_SIZE);
+                }
+              }
+            }
+          }
+
+          // 绘制当前方块
+          if (currentPiece) {
+            for (let r = 0; r < currentPiece.length; r++) {
+              for (let c = 0; c < currentPiece[r].length; c++) {
+                if (currentPiece[r][c]) {
+                  ctx.fillStyle = COLORS[currentColor];
+                  ctx.fillRect(
+                    (currentX + c) * BLOCK_SIZE,
+                    (currentY + r) * BLOCK_SIZE,
+                    BLOCK_SIZE - 1,
+                    BLOCK_SIZE - 1
+                  );
+
+                  // 绘制特殊方块标记
+                  const centerX = (currentX + c) * BLOCK_SIZE + BLOCK_SIZE / 2;
+                  const centerY = (currentY + r) * BLOCK_SIZE + BLOCK_SIZE / 2;
+
+                  if (currentPiece[r][c] === BOMB_MARKER) {
+                    drawBombMark(ctx, centerX, centerY, BLOCK_SIZE);
+                  } else if (currentPiece[r][c] === ROW_CLEAR_MARKER) {
+                    drawRowClearMark(ctx, centerX, centerY, BLOCK_SIZE);
+                  } else if (currentPiece[r][c] === COL_CLEAR_MARKER) {
+                    drawColClearMark(ctx, centerX, centerY, BLOCK_SIZE);
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        // 添加炸弹爆炸函数
+        function explodeBomb(row, col) {
+          const range = 2;
+
+          createExplosionEffect(row, col);
+
+          for (
+            let r = Math.max(0, row - range);
+            r <= Math.min(ROWS - 1, row + range);
+            r++
+          ) {
+            for (
+              let c = Math.max(0, col - range);
+              c <= Math.min(COLS - 1, col + range);
+              c++
+            ) {
+              if (board[r][c]) {
+                if (String(board[r][c]).startsWith("B")) {
+                  const bombColor = parseInt(String(board[r][c]).substring(1));
+                  board[r][c] = 0;
+                  explodeBomb(r, c);
+                } else {
+                  board[r][c] = 0;
+                }
+              }
+            }
+          }
+
+          // 在爆炸后检查悬空方块
+          setTimeout(applyGravity, 100);
+        }
+
+        // 添加爆炸效果
+        function createExplosionEffect(row, col) {
+          const centerX = col * BLOCK_SIZE + BLOCK_SIZE / 2;
+          const centerY = row * BLOCK_SIZE + BLOCK_SIZE / 2;
+
+          // 创建更多的爆炸粒子
+          for (let i = 0; i < 30; i++) {
+            particles.push(
+              new Particle(
+                centerX,
+                centerY,
+                "#ff8800" // 爆炸颜色
+              )
+            );
+          }
+
+          isAnimating = true;
+          animateParticles();
+        }
+
+        // 修改更换下一个方块的函数
+        function changeNextPiece() {
+          nextPiece = generatePieceWithSpecialType();
+          nextColor = Math.floor(Math.random() * SHAPES.length);
+          drawNextPiece();
+        }
+
+        // 添加按钮点击事件监听
+        document
+          .getElementById("changeNextPiece")
+          .addEventListener("click", changeNextPiece);
+
+        // 检查方块是否与固定方块相连
+        function isConnectedToFixed(row, col, visited = new Set()) {
+          // 如果超出边界或者当前位置没有方块，返回false
+          if (
+            row < 0 ||
+            row >= ROWS ||
+            col < 0 ||
+            col >= COLS ||
+            !board[row][col]
+          ) {
+            return false;
+          }
+
+          // 生成当前位置的唯一标识
+          const key = `${row},${col}`;
+
+          // 如果已经访问过这个位置，返回false避免循环
+          if (visited.has(key)) {
+            return false;
+          }
+
+          // 标记当前位置为已访问
+          visited.add(key);
+
+          // 如果到达底部，说明是固定的
+          if (row === ROWS - 1) {
+            return true;
+          }
+
+          // 检查四个方向的相邻方块
+          return (
+            isConnectedToFixed(row + 1, col, visited) || // 下
+            isConnectedToFixed(row, col - 1, visited) || // 左
+            isConnectedToFixed(row, col + 1, visited) || // 右
+            isConnectedToFixed(row - 1, col, visited)
+          ); // 上
+        }
+
+        // 修改重力效果函数
+        function applyGravity() {
+          let hasFalling = false;
+
+          // 从底部向上检查
+          for (let r = ROWS - 2; r >= 0; r--) {
+            for (let c = 0; c < COLS; c++) {
+              if (board[r][c] && !board[r + 1][c]) {
+                // 如果当前位置有方块且下方
+                // 检查这个方块是否与底部相连
+                if (!isConnectedToFixed(r, c)) {
+                  // 如果不相连，让它下落
+                  board[r + 1][c] = board[r][c];
+                  board[r][c] = 0;
+                  hasFalling = true;
+                }
+              }
+            }
+          }
+
+          // 如果有方块下落，继续检查
+          if (hasFalling) {
+            draw();
+            setTimeout(applyGravity, 50);
+          }
+        }
+
+        // 修改检查连接块的函数
+        function checkConnectedBlocks(
+          row,
+          col,
+          targetColor,
+          visited = new Set(),
+          blocks = []
+        ) {
+          // 边界检查
+          if (
+            row < 0 ||
+            row >= ROWS ||
+            col < 0 ||
+            col >= COLS ||
+            !board[row][col] ||
+            visited.has(`${row},${col}`)
+          ) {
+            return blocks;
+          }
+
+          // 获取当前方块的颜色
+          const currentColor =
+            typeof board[row][col] === "string"
+              ? parseInt(board[row][col].replace(/\D/g, ""))
+              : board[row][col];
+
+          // 调试输出
+          console.log("Comparing colors:", {
+            position: `${row},${col}`,
+            currentColor,
+            targetColor,
+            blockValue: board[row][col],
+          });
+
+          // 如果颜色不匹配，返回
+          if (currentColor !== targetColor) {
+            return blocks;
+          }
+
+          // 添加到已访问集合和连接块列表
+          visited.add(`${row},${col}`);
+          blocks.push({ row, col });
+
+          // 递归检查四个方向
+          checkConnectedBlocks(row + 1, col, targetColor, visited, blocks);
+          checkConnectedBlocks(row - 1, col, targetColor, visited, blocks);
+          checkConnectedBlocks(row, col + 1, targetColor, visited, blocks);
+          checkConnectedBlocks(row, col - 1, targetColor, visited, blocks);
+
+          return blocks;
+        }
+
+        // 添加检查和消除连接块的函数
+        function checkAndClearConnectedBlocks() {
+          const MIN_CONNECTED = 12;
+          let needToCheck = true;
+
+          while (needToCheck) {
+            needToCheck = false;
+            let visited = new Set();
+
+            for (let r = 0; r < ROWS; r++) {
+              for (let c = 0; c < COLS; c++) {
+                if (board[r][c] && !visited.has(`${r},${c}`)) {
+                  // 调试输出：打印当前检查的方块信息
+                  console.log("Checking block:", {
+                    position: `${r},${c}`,
+                    value: board[r][c],
+                    type: typeof board[r][c],
+                  });
+
+                  // 获取颜色值
+                  const color =
+                    typeof board[r][c] === "string"
+                      ? parseInt(board[r][c].replace(/\D/g, ""))
+                      : board[r][c];
+
+                  // 调试输出：打印解析后的颜值
+                  console.log("Parsed color:", color);
+
+                  const connectedBlocks = checkConnectedBlocks(
+                    r,
+                    c,
+                    color,
+                    new Set()
+                  );
+
+                  // 调试输出：打印连接块数量
+                  console.log("Connected blocks:", connectedBlocks.length);
+
+                  if (connectedBlocks.length >= MIN_CONNECTED) {
+                    console.log(
+                      "Found connected blocks to clear:",
+                      connectedBlocks
+                    );
+
+                    connectedBlocks.forEach((pos) => {
+                      createExplosionEffect(pos.row, pos.col);
+                      board[pos.row][pos.col] = 0;
+                    });
+
+                    score += connectedBlocks.length * 20;
+                    scoreElement.textContent = score;
+                    needToCheck = true;
+
+                    setTimeout(applyGravity, 300);
+                  }
+
+                  connectedBlocks.forEach((pos) => {
+                    visited.add(`${pos.row},${pos.col}`);
+                  });
+                }
+              }
+            }
+          }
+        }
+
+        // 修改炸弹标记的样式
+        function drawBombMark(ctx, x, y, size) {
+          // 绘制炸弹标记
+          ctx.fillStyle = "#000"; // 黑色外圈
+          ctx.beginPath();
+          ctx.arc(x, y, size / 3, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.fillStyle = "#f00"; // 改为红色内圈，更醒目
+          ctx.beginPath();
+          ctx.arc(x, y, size / 4, 0, Math.PI * 2);
+          ctx.fill();
+
+          // 添加爆炸效果线条
+          ctx.strokeStyle = "#f00";
+          ctx.lineWidth = 2;
+          const rays = 8;
+          const rayLength = size / 3;
+
+          for (let i = 0; i < rays; i++) {
+            const angle = (Math.PI * 2 * i) / rays;
+            ctx.beginPath();
+            ctx.moveTo(
+              x + (size / 3) * Math.cos(angle),
+              y + (size / 3) * Math.sin(angle)
+            );
+            ctx.lineTo(
+              x + rayLength * Math.cos(angle),
+              y + rayLength * Math.sin(angle)
+            );
+            ctx.stroke();
+          }
+        }
+
+        // 添加新的特殊方块标记
+        const ROW_CLEAR_CHANCE = 0.1; // 10% 横向清除概率
+        const COL_CLEAR_CHANCE = 0.1; // 10% 纵向清除概率
+        const ROW_CLEAR_MARKER = "R";
+        const COL_CLEAR_MARKER = "C";
+
+        // 修改横向清除标记
+        function drawRowClearMark(ctx, x, y, size) {
+          // 绘制背景圆形
+          ctx.fillStyle = "#fff";
+          ctx.beginPath();
+          ctx.arc(x, y, size / 3, 0, Math.PI * 2);
+          ctx.fill();
+
+          // 绘制双向箭头
+          ctx.strokeStyle = "#f00";
+          ctx.lineWidth = 3;
+
+          // 主线
+          ctx.beginPath();
+          ctx.moveTo(x - size / 3, y);
+          ctx.lineTo(x + size / 3, y);
+          ctx.stroke();
+
+          // 箭头头部
+          const arrowSize = size / 6;
+          ctx.beginPath();
+          // 左箭头
+          ctx.moveTo(x - size / 3, y);
+          ctx.lineTo(x - size / 3 + arrowSize, y - arrowSize / 2);
+          ctx.moveTo(x - size / 3, y);
+          ctx.lineTo(x - size / 3 + arrowSize, y + arrowSize / 2);
+          // 右箭头
+          ctx.moveTo(x + size / 3, y);
+          ctx.lineTo(x + size / 3 - arrowSize, y - arrowSize / 2);
+          ctx.moveTo(x + size / 3, y);
+          ctx.lineTo(x + size / 3 - arrowSize, y + arrowSize / 2);
+          ctx.stroke();
+        }
+
+        // 修改纵向清除标记
+        function drawColClearMark(ctx, x, y, size) {
+          // 绘制背圆形
+          ctx.fillStyle = "#fff";
+          ctx.beginPath();
+          ctx.arc(x, y, size / 3, 0, Math.PI * 2);
+          ctx.fill();
+
+          // 绘制双向箭头
+          ctx.strokeStyle = "#00f";
+          ctx.lineWidth = 3;
+
+          // 主线
+          ctx.beginPath();
+          ctx.moveTo(x, y - size / 3);
+          ctx.lineTo(x, y + size / 3);
+          ctx.stroke();
+
+          // 箭头头部
+          const arrowSize = size / 6;
+          ctx.beginPath();
+          // 上箭头
+          ctx.moveTo(x, y - size / 3);
+          ctx.lineTo(x - arrowSize / 2, y - size / 3 + arrowSize);
+          ctx.moveTo(x, y - size / 3);
+          ctx.lineTo(x + arrowSize / 2, y - size / 3 + arrowSize);
+          // 下箭头
+          ctx.moveTo(x, y + size / 3);
+          ctx.lineTo(x - arrowSize / 2, y + size / 3 - arrowSize);
+          ctx.moveTo(x, y + size / 3);
+          ctx.lineTo(x + arrowSize / 2, y + size / 3 - arrowSize);
+          ctx.stroke();
+        }
+
+        // 修改生成特殊方块的函数
+        function generatePieceWithSpecialType() {
+          const randomIndex = Math.floor(Math.random() * SHAPES.length);
+          // 为整个方块选择一种特殊类型
+          const specialType = Math.random();
+          let specialMarker = null;
+
+          if (specialType < BOMB_CHANCE) specialMarker = BOMB_MARKER;
+          else if (specialType < BOMB_CHANCE + ROW_CLEAR_CHANCE)
+            specialMarker = ROW_CLEAR_MARKER;
+          else if (
+            specialType <
+            BOMB_CHANCE + ROW_CLEAR_CHANCE + COL_CLEAR_CHANCE
+          )
+            specialMarker = COL_CLEAR_MARKER;
+
+          return SHAPES[randomIndex].map((row) =>
+            row.map((cell) => {
+              if (cell === 1) {
+                // 每个小方块独立判断是否成为特殊方块
+                if (specialMarker && Math.random() < 0.1) {
+                  return specialMarker;
+                }
+              }
+              return cell;
+            })
+          );
+        }
+
+        // 修改 newPiece 和 changeNextPiece 函数
+        function generatePieceWithSpecialType() {
+          const randomIndex = Math.floor(Math.random() * SHAPES.length);
+          // 为整个方块选择一种特殊类型
+          const specialType = Math.random();
+          let specialMarker = null;
+
+          if (specialType < BOMB_CHANCE) specialMarker = BOMB_MARKER;
+          else if (specialType < BOMB_CHANCE + ROW_CLEAR_CHANCE)
+            specialMarker = ROW_CLEAR_MARKER;
+          else if (
+            specialType <
+            BOMB_CHANCE + ROW_CLEAR_CHANCE + COL_CLEAR_CHANCE
+          )
+            specialMarker = COL_CLEAR_MARKER;
+
+          return SHAPES[randomIndex].map((row) =>
+            row.map((cell) => {
+              if (cell === 1) {
+                // 每个小方块独立判断是否成为特殊方块
+                if (specialMarker && Math.random() < 0.1) {
+                  return specialMarker;
+                }
+              }
+              return cell;
+            })
+          );
+        }
+
+        // 修改 changeNextPiece 函数
+        function changeNextPiece() {
+          nextPiece = generatePieceWithSpecialType();
+          nextColor = Math.floor(Math.random() * SHAPES.length);
+          drawNextPiece();
+        }
+
+        // 修改 newPiece 函数中的相关部分
+        function newPiece() {
+          if (nextPiece) {
+            currentPiece = nextPiece;
+            currentColor = nextColor;
+          } else {
+            const randomIndex = Math.floor(Math.random() * SHAPES.length);
+            currentPiece = generatePieceWithSpecialType();
+            currentColor = randomIndex;
+          }
+
+          const randomIndex = Math.floor(Math.random() * SHAPES.length);
+          nextPiece = generatePieceWithSpecialType();
+          nextColor = randomIndex;
+
+          currentX =
+            Math.floor(COLS / 2) - Math.floor(currentPiece[0].length / 2);
+          currentY = 0;
+          drawNextPiece();
+        }
+
+        // 添加行清除和列清除函数
+        function clearRow(row) {
+          createRowClearEffect(row);
+          for (let c = 0; c < COLS; c++) {
+            if (board[row][c]) {
+              board[row][c] = 0;
+            }
+          }
+          score += 100;
+          scoreElement.textContent = score;
+        }
+
+        function clearColumn(col) {
+          createColumnClearEffect(col);
+          for (let r = 0; r < ROWS; r++) {
+            if (board[r][col]) {
+              board[r][col] = 0;
+            }
+          }
+          score += 100;
+          scoreElement.textContent = score;
+        }
+
+        // 加特效函数
+        function createRowClearEffect(row) {
+          for (let c = 0; c < COLS; c++) {
+            if (board[row][c]) {
+              createExplosionEffect(row, c);
+            }
+          }
+        }
+
+        function createColumnClearEffect(col) {
+          for (let r = 0; r < ROWS; r++) {
+            if (board[r][col]) {
+              createExplosionEffect(r, col);
+            }
+          }
+        }
+
+        // 修改 draw 和 drawNextPiece 函数，添加新特殊方块的显示
+        function drawSpecialBlock(ctx, type, x, y, size) {
+          switch (type) {
+            case BOMB_MARKER:
+              drawBombMark(ctx, x, y, size);
+              break;
+            case ROW_CLEAR_MARKER:
+              drawRowClearMark(ctx, x, y, size);
+              break;
+            case COL_CLEAR_MARKER:
+              drawColClearMark(ctx, x, y, size);
+              break;
+          }
+        }
+
+        // 碰撞检测部分
+        function checkCollision() {
+          // ... existing collision detection code ...
+          if (collision) {
+            // ... existing collision handling code ...
+
+            // 在碰撞后立即检查连接块
+            checkAndClearConnectedBlocks();
+          }
+        }
+
+        // 消除行的部分
+        function clearLines() {
+          // ... existing line clearing code ...
+
+          // 在消除行后检查连接块
+          setTimeout(() => {
+            checkAndClearConnectedBlocks();
+          }, 300); // 保留延时以确保方块下落动画完成
+        }
+
+        function generateBlock() {
+          // ... existing code ...
+
+          // 直接使用定义的概率生成特殊块
+          const random = Math.random();
+          if (random < BOMB_PROBABILITY) {
+            block.type = "bomb";
+          } else if (random < BOMB_PROBABILITY + RAINBOW_PROBABILITY) {
+            block.type = "rainbow";
+          } else {
+            block.type = "normal";
+          }
+
+          // ... rest of the code ...
+        }
+
+        return {
+          start: startGame,
+        };
+      }
+
+      // 创建游戏实例
+      let game;
+
+     // DOM加载完成后的处理
+     document.addEventListener('DOMContentLoaded', () => {
+        const startScreen = document.getElementById('startScreen');
+        const startButton = document.getElementById('startButton');
+        const gameContainer = document.querySelector('.game-container');
+        const gameOverModal = document.getElementById('gameOverModal');
+        const restartButton = document.getElementById('restartButton');
+        const exitButton = document.getElementById('exitButton');
+        
+        gameContainer.style.display = 'none';
+        
+        startButton.addEventListener('click', () => {
+          startScreen.style.display = 'none';
+          gameContainer.style.display = 'flex';
+          game = initGame();
+          game.start();
+        });
+
+        restartButton.addEventListener('click', () => {
+          gameOverModal.style.display = 'none';
+          game.start();
+        });
+
+        exitButton.addEventListener('click', () => {
+          gameOverModal.style.display = 'none';
+          gameContainer.style.display = 'none';
+          startScreen.style.display = 'flex';
+        });
+      });
+    </script>
+  </body>
+</html>
